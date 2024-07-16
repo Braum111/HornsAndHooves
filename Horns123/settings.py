@@ -80,8 +80,8 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'roga_kopyta_db',  # Название БД
-        'USER': 'postgres',  # Измените, если у вас другой пользователь
-        'PASSWORD': 'Gamepro18',  # Пароль, который вы указали при установке
+        'USER': 'postgres',
+        'PASSWORD': 'Gamepro18',
         'HOST': 'localhost',
         'PORT': '5432',  # Порт по умолчанию для PostgreSQL
     }
