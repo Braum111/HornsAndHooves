@@ -79,11 +79,11 @@ WSGI_APPLICATION = 'Horns123.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'roga_kopyta_db',  # Название БД
+        'NAME': 'roga_kopyta_db',
         'USER': 'postgres',
         'PASSWORD': 'Gamepro18',
         'HOST': 'localhost',
-        'PORT': '5432',  # Порт по умолчанию для PostgreSQL
+        'PORT': '5432',
     }
 }
 
