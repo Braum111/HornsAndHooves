@@ -1,100 +1,166 @@
+from drf_yasg import openapi
+from drf_yasg.utils import swagger_auto_schema
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
-from .models import Category, Product, Cart, CartItem, Order, OrderItem
-from .serializers import CategorySerializer, ProductSerializer, CartSerializer, OrderSerializer
+
+from .models import Product, Cart, CartItem, Order, OrderItem, Category
+from .serializers import ProductSerializer, CartSerializer, OrderSerializer, CategorySerializer
 
 
-class ProductViewSet(viewsets.ModelViewSet):
-    queryset = Product.objects.all()
-    serializer_class = ProductSerializer
+class ProductViewSet(viewsets.ViewSet):
 
-    @action(detail=False, methods=['post'])
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Retrieve products by category",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'category_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Category ID')
+            },
+            required=['category_id']
+        ),
+        responses={200: ProductSerializer(many=True)}
+    )
+    @action(detail=False, methods=['post'], url_path='by_category')
     def by_category(self, request):
         category_id = request.data.get('category_id')
+        if not category_id:
+            return Response({"error": "Category ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+
         products = Product.objects.filter(category_id=category_id)
-        serializer = self.get_serializer(products, many=True)
+        serializer = ProductSerializer(products, many=True)
         return Response(serializer.data)
 
+    # Используем GET для получения детальной информации о конкретном продукте
+    def retrieve(self, request, pk=None):
+        try:
+            product = Product.objects.get(pk=pk)
+            serializer = ProductSerializer(product)
+            return Response(serializer.data)
+        except Product.DoesNotExist:
+            return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
 
-class CartViewSet(viewsets.ModelViewSet):
-    queryset = Cart.objects.all()
-    serializer_class = CartSerializer
+
+class CartViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        return Cart.objects.filter(user=self.request.user)
-
-    @action(detail=False, methods=['get'], url_path='my_cart')
-    def my_cart(self, request):
-        cart = Cart.objects.get(user=request.user)
-        serializer = self.get_serializer(cart)
+    @swagger_auto_schema(
+        operation_description="Получение корзины текущего пользователя",
+        responses={200: CartSerializer(many=True)}
+    )
+    def list(self, request):
+        """Получение корзины текущего пользователя"""
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        serializer = CartSerializer(cart)
         return Response(serializer.data)
 
-    @action(detail=True, methods=['post'], url_path='add_item')
-    def add_item(self, request, pk=None):
-        cart = self.get_object()
+    @swagger_auto_schema(
+        operation_description="Добавить продукт в корзину пользователя",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'product_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Product ID'),
+                'quantity': openapi.Schema(type=openapi.TYPE_INTEGER, description='Quantity')
+            },
+            required=['product_id', 'quantity']
+        ),
+        responses={200: openapi.Response(description="Product added to cart")}
+    )
+    def create(self, request):
+        """Добавление товара в корзину"""
         product_id = request.data.get('product_id')
         quantity = request.data.get('quantity', 1)
-        product = Product.objects.get(id=product_id)
+
+        try:
+            product = Product.objects.get(id=product_id)
+        except Product.DoesNotExist:
+            return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        cart, _ = Cart.objects.get_or_create(user=request.user)
         cart_item, created = CartItem.objects.get_or_create(cart=cart, product=product)
+
         if not created:
             cart_item.quantity += int(quantity)
         else:
             cart_item.quantity = int(quantity)
+
         cart_item.save()
-        return Response({'status': 'item added'})
+        return Response({'status': 'item added or updated'}, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=['delete'], url_path='remove_item')
-    def remove_item(self, request, pk=None):
-        cart = self.get_object()
+    @swagger_auto_schema(
+        operation_description="Обновить количество товара в корзине",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'product_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Product ID'),
+                'quantity': openapi.Schema(type=openapi.TYPE_INTEGER, description='Quantity')
+            },
+            required=['product_id', 'quantity']
+        ),
+        responses={200: openapi.Response(description="Product quantity updated")}
+    )
+    @action(detail=False, methods=['put'])
+    def update_item(self, request):
+        """Обновление количества товара в корзине"""
         product_id = request.data.get('product_id')
-        product = Product.objects.get(id=product_id)
-        CartItem.objects.filter(cart=cart, product=product).delete()
-        return Response({'status': 'item removed'})
+        quantity = request.data.get('quantity')
 
-    @action(detail=True, methods=['put'], url_path='update_items')
-    def update_items(self, request, pk=None):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=False)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        return Response(serializer.data)
+        try:
+            product = Product.objects.get(id=product_id)
+        except Product.DoesNotExist:
+            return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
 
+        cart = Cart.objects.get(user=request.user)
+        try:
+            cart_item = CartItem.objects.get(cart=cart, product=product)
+            cart_item.quantity = quantity
+            cart_item.save()
+            return Response({'status': 'cart item updated'}, status=status.HTTP_200_OK)
+        except CartItem.DoesNotExist:
+            return Response({"error": "Item not found in cart"}, status=status.HTTP_404_NOT_FOUND)
 
-class OrderViewSet(viewsets.ModelViewSet):
-    queryset = Order.objects.all()
-    serializer_class = OrderSerializer
+    @swagger_auto_schema(
+        method='delete',
+        operation_description="Удалить товар из корзины",
+        manual_parameters=[
+            openapi.Parameter('product_id', openapi.IN_QUERY, description="Product ID", type=openapi.TYPE_INTEGER)
+        ],
+        responses={200: openapi.Response(description="Product removed from cart")}
+    )
+    @action(detail=False, methods=['delete'])
+    def remove_item(self, request):
+        """Удаление товара из корзины"""
+        product_id = request.query_params.get('product_id')
+
+        if not product_id:
+            return Response({"error": "Product ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        cart = Cart.objects.get(user=request.user)
+        try:
+            cart_item = CartItem.objects.get(cart=cart, product_id=product_id)
+            cart_item.delete()
+            return Response({'status': 'item removed'}, status=status.HTTP_200_OK)
+        except CartItem.DoesNotExist:
+            return Response({"error": "Item not found in cart"}, status=status.HTTP_404_NOT_FOUND)
+
+class OrderViewSet(viewsets.GenericViewSet):
     permission_classes = [IsAuthenticated]
 
-    def create(self, request, *args, **kwargs):
-        user = request.user
-        cart = Cart.objects.get(user=user)
-
+    def create(self, request):
+        cart = Cart.objects.get(user=request.user)
         if not cart.items.exists():
             return Response({"error": "Cannot create order with an empty cart."}, status=status.HTTP_400_BAD_REQUEST)
 
-        order = Order.objects.create(user=user)
-        for item in cart.items.all():
-            OrderItem.objects.create(order=order, product=item.product, quantity=item.quantity)
-        cart.items.all().delete()
-        serializer = self.get_serializer(order)
-        return Response(serializer.data)
-
-    def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+        order = Order.objects.create(user=request.user)
+        items = [OrderItem(order=order, product=item.product, quantity=item.quantity) for item in cart.items.all()]
+        OrderItem.objects.bulk_create(items)
+        cart.items.all().delete()  # Clear the cart after creating the order
+        serializer = OrderSerializer(order)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-class CategoryViewSet(viewsets.ModelViewSet):
+class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
