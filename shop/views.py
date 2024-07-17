@@ -24,6 +24,39 @@ class ProductViewSet(viewsets.ModelViewSet):
         return subcategories
 
     @swagger_auto_schema(
+        method='get',
+        operation_summary="Фильтрация продуктов по цене и категориям",
+        operation_description="Фильтрует продукты по минимальной и максимальной цене, а также по идентификатору "
+                              "категории и её подкатегориям. Если 'category_id' равен 0, фильтрация по категориям не "
+                              "применяется.",
+        tags=['Price and Category Filtering'],
+        manual_parameters=[
+            openapi.Parameter('min_price', openapi.IN_QUERY, description="Минимальная цена", type=openapi.TYPE_NUMBER),
+            openapi.Parameter('max_price', openapi.IN_QUERY, description="Максимальная цена", type=openapi.TYPE_NUMBER),
+            openapi.Parameter('category_id', openapi.IN_QUERY,
+                              description="Идентификатор категории, 0 для игнорирования", type=openapi.TYPE_INTEGER),
+        ],
+        responses={200: ProductSerializer(many=True)}
+    )
+    @action(detail=False, methods=['get'], url_path='filter_by_price_category')
+    def filter_by_price_category(self, request):
+        min_price = request.query_params.get('min_price')
+        max_price = request.query_params.get('max_price')
+        category_id = request.query_params.get('category_id')
+        queryset = self.get_queryset()
+
+        if min_price is not None:
+            queryset = queryset.filter(price__gte=min_price)
+        if max_price is not None:
+            queryset = queryset.filter(price__lte=max_price)
+        if category_id and int(category_id) > 0:
+            all_subcategories = self.get_all_subcategories(int(category_id))
+            queryset = queryset.filter(categories__id__in=all_subcategories)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @swagger_auto_schema(
         method='post',
         operation_summary="Поиск продуктов по категории",
         operation_description="Получить список продуктов, отфильтрованных по указанному идентификатору категории и "
@@ -49,7 +82,6 @@ class ProductViewSet(viewsets.ModelViewSet):
         products = self.queryset.filter(categories__id__in=all_subcategories)
         serializer = self.get_serializer(products, many=True)
         return Response(serializer.data)
-
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
@@ -199,7 +231,8 @@ class OrderViewSet(viewsets.GenericViewSet):
     def create(self, request):
         cart = Cart.objects.get(user=request.user)
         if not cart.items.exists():
-            return Response({"error": "Невозможно создать заказ с пустой корзиной."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Невозможно создать заказ с пустой корзиной."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         order = Order.objects.create(user=request.user)
         items = [OrderItem(order=order, product=item.product, quantity=item.quantity) for item in cart.items.all()]
