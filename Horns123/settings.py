@@ -40,8 +40,8 @@ INSTALLED_APPS = [
     'shop',
     'rest_framework',
     'drf_yasg',
+    'mptt',
 ]
-
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',

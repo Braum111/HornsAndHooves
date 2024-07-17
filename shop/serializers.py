@@ -3,10 +3,45 @@ from rest_framework import serializers
 from .models import Product, CartItem, Cart, Order, OrderItem, Category
 
 
+class RecursiveField(serializers.Serializer):
+    def to_representation(self, value):
+        serializer = self.parent.parent.__class__(value, context=self.context)
+        return serializer.data
+
+
+class CategorySerializer(serializers.ModelSerializer):
+    children = RecursiveField(many=True, read_only=True)
+
+    class Meta:
+        model = Category
+        fields = ['id', 'name', 'parent', 'children']
+
+
+class CategoryTreeSerializer(serializers.ModelSerializer):
+    parent = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Category
+        fields = ['id', 'name', 'parent']
+
+    def get_parent(self, obj):
+        if obj.parent is not None:
+            return CategoryTreeSerializer(obj.parent, context=self.context).data
+        return None
+
+
 class ProductSerializer(serializers.ModelSerializer):
+    categories = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), many=True)
+
     class Meta:
         model = Product
-        fields = '__all__'
+        fields = ['id', 'name', 'description', 'price', 'categories']
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        category_trees = [CategoryTreeSerializer(category).data for category in instance.categories.all()]
+        rep['categories'] = category_trees
+        return rep
 
 
 class CartItemSerializer(serializers.ModelSerializer):
@@ -59,10 +94,3 @@ class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = ['id', 'user', 'items', 'created_at']
-
-
-# shop/serializers.py
-class CategorySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Category
-        fields = '__all__'
