@@ -38,7 +38,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         ],
         responses={200: ProductSerializer(many=True)}
     )
-    @action(detail=False, methods=['get'], url_path='filter_by_price_category')
+    @action(detail=False, methods=['get'], url_path='filter_by_price_category', name='product-filter_by_price_category')
     def filter_by_price_category(self, request):
         min_price = request.query_params.get('min_price')
         max_price = request.query_params.get('max_price')

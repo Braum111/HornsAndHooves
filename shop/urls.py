@@ -12,3 +12,6 @@ router.register(r'categories', CategoryViewSet, basename='category')
 urlpatterns = [
     path('', include(router.urls)),
 ]
+print("Зарегистрированные URL-адреса:")
+for url in router.urls:
+    print(url.name, url.pattern)
